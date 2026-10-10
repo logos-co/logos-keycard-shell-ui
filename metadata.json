@@ -1,0 +1,22 @@
+{
+  "name": "keycard_shell_ui",
+  "display_name": "Keycard Shell",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "interface": "universal",
+  "category": "wallet",
+  "description": "The Keycard Shell's app: the Shells connected, the accounts offered to Logos apps, and offering more, each key confirmed on the Shell.",
+  "author": "Logos Core Team",
+  "main": "keycard_shell_ui_plugin",
+  "icon": "src/icons/keycard-shell.png",
+  "view": "qml/KeycardShellView.qml",
+  "dependencies": [
+    { "name": "keycard_shell_module", "version": "~0.1.0" }
+  ],
+  "codegen": { "rep": "src/keycard_shell_ui.rep" },
+  "nix": {
+    "external_libraries": [],
+    "packages": { "build": [], "runtime": ["qt6.qtdeclarative"] },
+    "cmake": { "find_packages": [], "extra_sources": [], "extra_include_dirs": [], "extra_link_libraries": [] }
+  }
+}
