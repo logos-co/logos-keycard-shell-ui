@@ -1,0 +1,19 @@
+// QtRO view contract for the Keycard Shell's app. No secret crosses it: the keys stay on the card
+// inside the Shell, and its PIN is entered on the Shell.
+class KeycardShellUi
+{
+    PROP(QString statusText="Starting" READONLY)
+    PROP(QString lastError="" READONLY)
+
+    // `[{ serial, firmware?, database?, busy }]`: the Shells connected now.
+    PROP(QString devicesJson="[]" READONLY)
+    // The accounts offered to apps, public material only, each `available` while its Shell is in.
+    PROP(QString accountsJson="[]" READONLY)
+    // The export under way or last finished: `{ state, accounts?, error? }`, `{}` before any.
+    PROP(QString exportJson="{}" READONLY)
+
+    SLOT(void refresh())
+    // Ask the Shell for these accounts: `families` is a JSON list of evm, bitcoin, bitcoin_taproot.
+    SLOT(bool offer(QString familiesJson, QString chain, int account, QString label))
+    SLOT(bool removeAccount(QString id))
+}

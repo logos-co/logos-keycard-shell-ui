@@ -1,0 +1,137 @@
+name: "Offering a Keycard Shell's accounts, in its app"
+output: keycard-shell-ui-e2e.md
+release: ""
+
+intro: |
+  The Keycard Shell keeps its keys on the card inside it. Its app, `keycard_shell_ui`, shows the
+  Shells connected and lets the person choose which accounts Logos apps may use. The Shell asks
+  before each key leaves it, and only public keys are kept.
+
+  This doc-test drives the app headlessly against `keycard-shell-emulator`, a Shell in software
+  that answers the firmware's USB commands from the "abandon … about" test phrase and confirms
+  every request at once. A real Shell asks its person instead.
+
+what_you_build: "The Keycard Shell's app, its module, and an emulated Shell, in Basecamp's standalone mode."
+
+what_you_learn:
+  - What the app shows of a connected Shell
+  - How accounts are offered, and taken back
+
+prerequisites:
+  - "**Nix** with flakes enabled."
+  - "**A Linux or macOS machine.** The app runs headless via `QT_QPA_PLATFORM=offscreen`, so no display is needed."
+
+sections:
+  - title: "Build the pieces"
+    step: true
+    steps:
+      - title: "The host and the test driver"
+        run: |
+          set -euo pipefail
+          nix build 'github:logos-co/logos-basecamp#app-standalone' --no-write-lock-file -o result-basecamp
+          nix build 'github:logos-co/logos-qt-mcp' --no-write-lock-file -o result-mcp
+      - title: "The Shell module and its emulator"
+        run: |
+          set -euo pipefail
+          nix build 'github:logos-co/logos-keycard-shell-module/eb6bb6fb14a16f102e9a82c5264e80cbc0c21878#install' --no-write-lock-file -o result-module
+          nix build 'github:logos-co/logos-keycard-shell-module/eb6bb6fb14a16f102e9a82c5264e80cbc0c21878#emulator' --no-write-lock-file -o result-emulator
+        code_block: |
+          nix build 'github:logos-co/logos-keycard-shell-module#install' -o result-module
+          nix build 'github:logos-co/logos-keycard-shell-module#emulator' -o result-emulator
+      - title: "The app"
+        run: "nix build 'github:logos-co/logos-keycard-shell-ui{release}#install' --no-write-lock-file -o result-ui"
+        code_block: "nix build 'github:logos-co/logos-keycard-shell-ui#install' --no-write-lock-file -o result-ui"
+      - title: "Lay out the module for the host"
+        run: |
+          set -euo pipefail
+          mkdir -p tree/modules
+          cp -rL result-module/modules/* tree/modules/
+          chmod -R u+w tree
+          ls tree/modules result-ui/plugins
+        expect_contains:
+          - "keycard_shell_module"
+          - "keycard_shell_ui"
+
+  - title: "Offer the Shell's accounts"
+    step: true
+    text: |
+      The emulated Shell listens on a local port, and `KEYCARD_SHELL_EMULATOR` points the module
+      at it instead of USB.
+    steps:
+      - title: "Start the emulated Shell"
+        run: "sh -c './result-emulator/bin/keycard-shell-emulator --listen 127.0.0.1:47321 > shell.addr 2> shell.log & echo $! > shell.pid'; sleep 1; cat shell.addr"
+        code_block: "keycard-shell-emulator --listen 127.0.0.1:47321 &"
+        expect_contains:
+          - "127.0.0.1:47321"
+      - title: "Offer three accounts, and take one back"
+        ui_test:
+          launch: "env KEYCARD_SHELL_EMULATOR=127.0.0.1:47321 QT_FORCE_STDERR_LOGGING=1 QML_INSPECTOR_PORT=3768 ./result-basecamp/bin/LogosBasecamp --module ./result-ui --modules-dir ./tree/modules --user-dir ./userdir"
+          qt_mcp: "result-mcp"
+          launch_timeout: 600
+          tests:
+            - name: "The Shell is connected"
+              action: wait_for
+              texts: ["Keycard Shell, firmware 1.4.0 (62a772f85e4be6226108b56c0b1cf9)"]
+              timeout: 30000
+
+            - name: "Nothing is offered yet"
+              action: wait_for
+              texts: ["No account offered yet."]
+              timeout: 10000
+              screenshot: "keycard-shell-ui-connected.png"
+
+            # Chosen by property: a click lands where the layout put the box, and these sit in a row.
+            - name: "Native segwit too"
+              action: set_property
+              find_by: "objectName"
+              find_value: "offerSegwit"
+              property: "checked"
+              value: true
+
+            - name: "And taproot"
+              action: set_property
+              find_by: "objectName"
+              find_value: "offerTaproot"
+              property: "checked"
+              value: true
+
+            - name: "Offer them"
+              action: click_object
+              find_value: "offerButton"
+
+            - name: "The Shell confirmed each key"
+              action: wait_for
+              texts: ["Offered 3 accounts."]
+              timeout: 30000
+
+            - name: "They are listed, connected"
+              action: wait_for
+              texts:
+                - "Keycard Shell EVM — 0x9858effd232b4033e47d90003d41ec34ecaeda94"
+                - "Keycard Shell native segwit (test) — m/84'/1'/0'"
+                - "Keycard Shell taproot (test) — m/86'/1'/0'"
+              timeout: 10000
+              screenshot: "keycard-shell-ui-offered.png"
+
+            - name: "Take the taproot account back"
+              action: click_object
+              find_value: "removeAccount_2"
+
+            - name: "Two remain"
+              action: expect_property
+              find_by: "objectName"
+              find_value: "accountRepeater"
+              property: "count"
+              value: 2
+              timeout: 10000
+              screenshot: "keycard-shell-ui-removed.png"
+
+      - title: "What the module kept"
+        text: "Public material only: no private key ever reaches it."
+        run: "cat userdir/module_data/keycard_shell_module/*/accounts.json 2>/dev/null || find userdir -name accounts.json -exec cat {} +"
+        expect_contains:
+          - "tpub"
+          - "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+
+      - title: "Stop the emulated Shell"
+        run: "kill $(cat shell.pid)"
